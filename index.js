@@ -2,31 +2,35 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 
-const transferenciasRouter = require('./routes/transferencias')
-
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middlewares
 app.use(cors());
 app.use(express.json());
 
-// Endpoint de prueba
-
-app.use('/api/transferencias', transferenciasRouter);
-
+// Ruta de estado
 app.get('/api/status', (req, res) => {
-    res.json({ ok: true, mensaje: 'Backend Banco Cloud operativo' });
+  res.json({ ok: true, mensaje: 'Backend Banco Cloud operativo' });
+});
+
+// Importar rutas de transferencias si existe el archivo
+try {
+  const transferenciasRoutes = require('./routes/transferencias');
+  app.use('/api/transferencias', transferenciasRoutes);
+} catch (e) {
+  console.log('Ruta de transferencias pendiente o no encontrada');
+}
+
+app.get('/api/cuentas', async (req, res) => {
+  try {
+    const db = require('./config/db');
+    const [rows] = await db.query('SELECT * FROM cuentas');
+    res.json(rows);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 app.listen(PORT, () => {
-    console.log(`Servidor corriendo en http://localhost:${PORT}`);
+  console.log(`Servidor Banco Cloud escuchando en el puerto ${PORT}`);
 });
-
-git branch -M main
-git remote add origin https://github.com/Pareyaguilera/BancoCloud.git
-    git push -u origin main
-
-git remote set-url origin https://github.com/Pareyaguilera/BancoCloud.git
-
-    git remote add origin https://github.com/Pareyaguilera/BancoCloud.git

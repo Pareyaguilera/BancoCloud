@@ -1,104 +1,107 @@
 const express = require('express');
 const router = express.Router();
+const db = require('../config/db');
 
-// Base de datos simulada en memoria
-let cuentas = [
-    { numeroCuenta: '1111', usuarioSub: 'user123', saldo: 50000 },
-    { numeroCuenta: '2222', usuarioSub: 'user123', saldo: 15000 },
-    { numeroCuenta: '3333', usuarioSub: 'otroUser', saldo: 80000 }
-];
+// 1. Crear transferencia con transacción segura
+router.post('/', async (req, res) => {
+  const { origen, destino, monto, usuarioSub } = req.body;
 
-let transferencias = [];
+  if (!origen || !destino || !monto || !usuarioSub) {
+    return res.status(400).json({ error: 'Faltan campos obligatorios' });
+  }
 
-// 1. [Usuario] Crear transferencia entre cuentas propias
-router.post('/', (req, res) => {
-    const { origen, destino, monto, usuarioSub } = req.body;
+  const montoNum = parseFloat(monto);
+  if (isNaN(montoNum) || montoNum <= 0) {
+    return res.status(400).json({ error: 'El monto debe ser un número positivo' });
+  }
 
-    if (!origen || !destino || !monto || !usuarioSub) {
-        return res.status(400).json({ error: 'Faltan campos obligatorios' });
+  let connection;
+  try {
+    connection = await db.getConnection();
+    await connection.beginTransaction();
+
+    // Validar cuenta de origen y saldo
+    const [origenRows] = await connection.query(
+      'SELECT * FROM cuentas WHERE numero_cuenta = ? AND usuario_sub = ? FOR UPDATE',
+      [origen, usuarioSub]
+    );
+
+    if (origenRows.length === 0) {
+      await connection.rollback();
+      return res.status(404).json({ error: 'Cuenta de origen no encontrada o no pertenece al usuario' });
     }
 
-    const cOrigen = cuentas.find(c => c.numeroCuenta === origen);
-    const cDestino = cuentas.find(c => c.numeroCuenta === destino);
-
-    if (!cOrigen || !cDestino) {
-        return res.status(404).json({ error: 'Una o ambas cuentas no existen' });
+    if (parseFloat(origenRows[0].saldo) < montoNum) {
+      await connection.rollback();
+      return res.status(400).json({ error: 'Saldo insuficiente' });
     }
 
-    // Validar cuentas propias
-    if (cOrigen.usuarioSub !== usuarioSub || cDestino.usuarioSub !== usuarioSub) {
-        return res.status(403).json({ error: 'Solo se permiten transferencias entre cuentas propias' });
+    // Validar cuenta de destino
+    const [destinoRows] = await connection.query(
+      'SELECT * FROM cuentas WHERE numero_cuenta = ? FOR UPDATE',
+      [destino]
+    );
+
+    if (destinoRows.length === 0) {
+      await connection.rollback();
+      return res.status(404).json({ error: 'Cuenta de destino no existe' });
     }
 
-    // Validar saldo
-    if (cOrigen.saldo < monto) {
-        return res.status(400).json({ error: 'Saldo insuficiente' });
-    }
+    // Actualizar saldos
+    await connection.query(
+      'UPDATE cuentas SET saldo = saldo - ? WHERE numero_cuenta = ?',
+      [montoNum, origen]
+    );
+    await connection.query(
+      'UPDATE cuentas SET saldo = saldo + ? WHERE numero_cuenta = ?',
+      [montoNum, destino]
+    );
 
-    // Movimiento de fondos
-    cOrigen.saldo -= monto;
-    cDestino.saldo += monto;
+    // Insertar registro en historial
+    const [resultado] = await connection.query(
+      'INSERT INTO transferencias (cuenta_origen, cuenta_destino, monto, usuario_sub, estado) VALUES (?, ?, ?, ?, ?)',
+      [origen, destino, montoNum, usuarioSub, 'COMPLETADA']
+    );
 
-    const nuevaTransferencia = {
-        id: transferencias.length + 1,
-        origen,
-        destino,
-        monto,
-        usuarioSub,
-        fecha: new Date().toISOString(),
-        estado: 'COMPLETADA'
-    };
+    await connection.commit();
 
-    transferencias.push(nuevaTransferencia);
-    res.status(201).json({ mensaje: 'Transferencia realizada', transferencia: nuevaTransferencia });
+    res.status(201).json({
+      mensaje: 'Transferencia realizada con éxito',
+      transferenciaId: resultado.insertId,
+      origen,
+      destino,
+      monto: montoNum
+    });
+  } catch (error) {
+    if (connection) await connection.rollback();
+    console.error('Error en transferencia:', error);
+    res.status(500).json({ error: 'Error interno al procesar la transferencia', detalle: error.message });
+  } finally {
+    if (connection) connection.release();
+  }
 });
 
-// 2. [Usuario] Consultar historial propio
-router.get('/historial/:usuarioSub', (req, res) => {
-    const { usuarioSub } = req.params;
-    const historial = transferencias.filter(t => t.usuarioSub === usuarioSub);
-    res.json(historial);
+// 2. Historial por usuario
+router.get('/historial/:usuarioSub', async (req, res) => {
+  try {
+    const [filas] = await db.query(
+      'SELECT * FROM transferencias WHERE usuario_sub = ? ORDER BY fecha DESC',
+      [req.params.usuarioSub]
+    );
+    res.json(filas);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
-// 3. [Admin] Listar transferencias con filtros opcionales
-router.get('/admin', (req, res) => {
-    const { origen, estado } = req.query;
-    let resultado = [...transferencias];
-
-    if (origen) {
-        resultado = resultado.filter(t => t.origen === origen);
-    }
-    if (estado) {
-        resultado = resultado.filter(t => t.estado === estado);
-    }
-
-    res.json(resultado);
-});
-
-// 4. [Admin] Anular transferencia
-router.put('/admin/:id/anular', (req, res) => {
-    const { id } = req.params;
-    const trans = transferencias.find(t => t.id === parseInt(id));
-
-    if (!trans) {
-        return res.status(404).json({ error: 'Transferencia no encontrada' });
-    }
-
-    if (trans.estado === 'ANULADA') {
-        return res.status(400).json({ error: 'La transferencia ya está anulada' });
-    }
-
-    // Revertir saldos
-    const cOrigen = cuentas.find(c => c.numeroCuenta === trans.origen);
-    const cDestino = cuentas.find(c => c.numeroCuenta === trans.destino);
-
-    if (cOrigen && cDestino) {
-        cOrigen.saldo += trans.monto;
-        cDestino.saldo -= trans.monto;
-    }
-
-    trans.estado = 'ANULADA';
-    res.json({ mensaje: 'Transferencia anulada exitosamente', transferencia: trans });
+// 3. Listado administrativo general
+router.get('/admin', async (req, res) => {
+  try {
+    const [filas] = await db.query('SELECT * FROM transferencias ORDER BY fecha DESC');
+    res.json(filas);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 module.exports = router;
