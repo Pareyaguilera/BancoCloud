@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Banco Cloud - Portal Transaccional</title>
+  <style>
+    body { font-family: 'Segoe UI', Arial, sans-serif; margin: 0; padding: 20px; background-color: #f4f6f9; color: #333; }
+    .container { max-width: 900px; margin: 0 auto; }
+    .card { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.08); margin-bottom: 20px; }
+    h2, h3, h4 { color: #0b3c5d; margin-top: 0; }
+    label { font-weight: 600; font-size: 14px; display: block; margin-top: 10px; }
+    input, select, button { padding: 10px; margin-top: 5px; width: 100%; box-sizing: border-box; border-radius: 4px; border: 1px solid #ccc; font-size: 14px; }
+    button { background-color: #0b3c5d; color: white; border: none; font-weight: bold; cursor: pointer; transition: background 0.2s; margin-top: 15px; }
+    button:hover { background-color: #1d5f8a; }
+    .btn-danger { background-color: #c0392b; width: auto; padding: 6px 12px; font-size: 12px; margin: 0; }
+    .btn-danger:hover { background-color: #e74c3c; }
+    .btn-secondary { background-color: #7f8c8d; width: auto; padding: 8px 15px; font-size: 13px; margin: 0; }
+    .btn-secondary:hover { background-color: #95a5a6; }
+    .header-bar { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 15px; }
+    .hidden { display: none; }
+    table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+    th, td { border: 1px solid #ddd; padding: 10px; text-align: left; font-size: 13px; }
+    th { background-color: #f0f3f6; }
+    .badge { padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px; display: inline-block; }
+    .COMPLETADA { background: #d4edda; color: #155724; }
+    .ANULADA { background: #f8d7da; color: #721c24; }
+    .flex-row { display: flex; gap: 10px; align-items: flex-end; }
+    .error-text { color: #c0392b; font-size: 13px; margin-top: 8px; font-weight: bold; }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+
+    <!-- PANEL DE INICIO DE SESIÓN -->
+    <div id="panelLogin" class="card">
+      <h2>Iniciar Sesión - Banco Cloud</h2>
+      <label>Usuario o Correo:</label>
+      <input type="text" id="loginUsername" placeholder="Ej: cliente o pa.rey@duocuc.cl">
+      
+      <label>Contraseña:</label>
+      <input type="password" id="loginPassword" placeholder="••••••••">
+      
+      <button onclick="iniciarSesionCognito()">Entrar al Portal</button>
+      <div id="loginError" class="error-text"></div>
+    </div>
+
+    <!-- PANEL CLIENTE / USUARIO -->
+    <div id="vistaCliente" class="card hidden">
+      <div class="header-bar">
+        <div>
+          <h3>Módulo de Clientes</h3>
+          <small>ID Usuario (SUB): <strong id="subCliente"></strong></small>
+        </div>
+        <button class="btn-secondary" onclick="cerrarSesion()">Cerrar Sesión</button>
+      </div>
+
+      <h4>Transferir entre Cuentas Propias</h4>
+      <div class="flex-row">
+        <div style="flex: 1;">
+          <label>Cuenta Origen:</label>
+          <input type="text" id="origen" placeholder="Ej: 1111">
+        </div>
+        <div style="flex: 1;">
+          <label>Cuenta Destino:</label>
+          <input type="text" id="destino" placeholder="Ej: 2222">
+        </div>
+        <div style="flex: 1;">
+          <label>Monto:</label>
+          <input type="number" id="monto" placeholder="Ej: 5000">
+        </div>
+      </div>
+      <button onclick="crearTransferencia()">Realizar Transferencia</button>
+
+      <h4 style="margin-top: 30px;">Historial de Transferencias</h4>
+      <button class="btn-secondary" onclick="consultarHistorial()">Actualizar Historial</button>
+      <div id="tablaHistorial"></div>
+    </div>
+
+    <!-- PANEL EMPLEADO / ADMIN -->
+    <div id="vistaAdmin" class="card hidden">
+      <div class="header-bar">
+        <div>
+          <h3>Panel Administrativo (Empleado)</h3>
+          <small>Gestión y Control de Transferencias</small>
+        </div>
+        <button class="btn-secondary" onclick="cerrarSesion()">Cerrar Sesión</button>
+      </div>
+
+      <h4>Listar Transferencias con Filtros</h4>
+      <div class="flex-row">
+        <div style="flex: 1;">
+          <label>Estado:</label>
+          <select id="filtroEstado">
+            <option value="">Todos los estados</option>
+            <option value="COMPLETADA">COMPLETADA</option>
+            <option value="ANULADA">ANULADA</option>
+          </select>
+        </div>
+        <div style="flex: 1;">
+          <label>Número de Cuenta:</label>
+          <input type="text" id="filtroCuenta" placeholder="Ej: 1111">
+        </div>
+        <div style="flex: 0.5;">
+          <button onclick="aplicarFiltrosAdmin()" style="margin-top: 0;">Buscar</button>
+        </div>
+      </div>
+
+      <div id="tablaAdmin"></div>
+    </div>
+
+  </div>
+
+  <script>
+    // ==========================================
+    // CONFIGURACIÓN DE AWS Y ENDPOINTS
+    // ==========================================
+    const COGNITO_CLIENT_ID = '3ofsq8ve6622qtdp10nk1tp2e9';
+    const COGNITO_REGION = 'us-east-1';
+    const API_BASE = 'https://8ifqdhj41a.execute-api.us-east-1.amazonaws.com/Dev/api/trasferencias';
+
+    let tokenActual = '';
+    let usuarioSub = '';
+    let cacheTransferenciasAdmin = [];
+
+    // Decodifica el payload JWT en base64
+    function decodificarToken(token) {
+      try {
+        const payload = token.split('.')[1];
+        return JSON.parse(decodeURIComponent(escape(atob(payload))));
+      } catch (e) {
+        return null;
+      }
+    }
+
+    // Inicio de sesión directo con Cognito
+    async function iniciarSesionCognito() {
+      const username = document.getElementById('loginUsername').value.trim();
+      const password = document.getElementById('loginPassword').value.trim();
+      const errorDiv = document.getElementById('loginError');
+      errorDiv.innerText = '';
+
+      if (!username || !password) {
+        errorDiv.innerText = 'Debes ingresar usuario y contraseña.';
+        return;
+      }
+
+      try {
+        const res = await fetch(`https://cognito-idp.${COGNITO_REGION}.amazonaws.com/`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-amz-json-1.1',
+            'X-Amz-Target': 'AWSCognitoIdentityProviderService.InitiateAuth'
+          },
+          body: JSON.stringify({
+            AuthFlow: 'USER_PASSWORD_AUTH',
+            ClientId: COGNITO_CLIENT_ID,
+            AuthParameters: {
+              USERNAME: username,
+              PASSWORD: password
+            }
+          })
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          errorDiv.innerText = data.message || 'Credenciales inválidas.';
+          return;
+        }
+
+        tokenActual = data.AuthenticationResult.IdToken;
+        const infoToken = decodificarToken(tokenActual);
+        usuarioSub = infoToken.sub;
+
+        const grupos = infoToken['cognito:groups'] || [];
+
+        // Ocultar login
+        document.getElementById('panelLogin').classList.add('hidden');
+
+        // Mostrar módulo según rol
+        if (grupos.includes('Admin')) {
+          document.getElementById('vistaAdmin').classList.remove('hidden');
+          cargarDatosAdmin();
+        } else {
+          document.getElementById('vistaCliente').classList.remove('hidden');
+          document.getElementById('subCliente').innerText = usuarioSub;
+          consultarHistorial();
+        }
+
+      } catch (error) {
+        console.error('Error al autenticar:', error);
+        errorDiv.innerText = 'Error al comunicarse con Cognito.';
+      }
+    }
+
+    function cerrarSesion() {
+      tokenActual = '';
+      usuarioSub = '';
+      cacheTransferenciasAdmin = [];
+      document.getElementById('loginUsername').value = '';
+      document.getElementById('loginPassword').value = '';
+      document.getElementById('vistaCliente').classList.add('hidden');
+      document.getElementById('vistaAdmin').classList.add('hidden');
+      document.getElementById('panelLogin').classList.remove('hidden');
+    }
+
+    // ==========================================
+    // OPERACIONES DEL CLIENTE
+    // ==========================================
+    async function crearTransferencia() {
+      const origen = document.getElementById('origen').value.trim();
+      const destino = document.getElementById('destino').value.trim();
+      const monto = document.getElementById('monto').value.trim();
+
+      if (!origen || !destino || !monto) {
+        alert('Debes completar cuenta origen, destino y monto.');
+        return;
+      }
+
+      try {
+        const res = await fetch(API_BASE, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + tokenActual
+          },
+          body: JSON.stringify({
+            origen,
+            destino,
+            monto: parseFloat(monto),
+            usuarioSub
+          })
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          alert('Error al transferir: ' + (data.error || 'No fue posible completar la transferencia.'));
+          return;
+        }
+
+        alert('¡Transferencia completada exitosamente!');
+        document.getElementById('origen').value = '';
+        document.getElementById('destino').value = '';
+        document.getElementById('monto').value = '';
+        consultarHistorial();
+      } catch (err) {
+        console.error(err);
+        alert('Error de conexión con el API Gateway.');
+      }
+    }
+
+    async function consultarHistorial() {
+      try {
+        const res = await fetch(`${API_BASE}/historial/${usuarioSub}`, {
+          headers: {
+            'Authorization': 'Bearer ' + tokenActual
+          }
+        });
+
+        const data = await res.json();
+        renderizarTabla(data, 'tablaHistorial', false);
+      } catch (err) {
+        console.error(err);
+        alert('Error al consultar el historial.');
+      }
+    }
+
+    // ==========================================
+    // OPERACIONES DEL ADMIN (CON FILTRO FRONTEND)
+    // ==========================================
+    async function cargarDatosAdmin() {
+      try {
+        const res = await fetch(`${API_BASE}/admin`, {
+          headers: {
+            'Authorization': 'Bearer ' + tokenActual
+          }
+        });
+
+        const data = await res.json();
+        cacheTransferenciasAdmin = Array.isArray(data) ? data : [];
+        aplicarFiltrosAdmin();
+      } catch (err) {
+        console.error(err);
+        alert('Error al cargar datos administrativos.');
+      }
+    }
+
+    function aplicarFiltrosAdmin() {
+      const estadoFiltro = document.getElementById('filtroEstado').value;
+      const cuentaFiltro = document.getElementById('filtroCuenta').value.trim();
+
+      const resultado = cacheTransferenciasAdmin.filter(item => {
+        let matchEstado = true;
+        let matchCuenta = true;
+
+        if (estadoFiltro) {
+          matchEstado = (item.estado === estadoFiltro);
+        }
+
+        if (cuentaFiltro) {
+          matchCuenta = (
+            String(item.cuenta_origen) === cuentaFiltro || 
+            String(item.cuenta_destino) === cuentaFiltro
+          );
+        }
+
+        return matchEstado && matchCuenta;
+      });
+
+      renderizarTabla(resultado, 'tablaAdmin', true);
+    }
+
+    async function anularTransferencia(id) {
+      if (!confirm(`¿Confirmas anular la transferencia #${id}? Se revertirán los saldos en las cuentas.`)) {
+        return;
+      }
+
+      try {
+        const res = await fetch(`${API_BASE}/admin/anular/${id}`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': 'Bearer ' + tokenActual
+          }
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          alert('Error al anular: ' + (data.error || 'No se pudo anular.'));
+          return;
+        }
+
+        alert('Transferencia anulada exitosamente.');
+        cargarDatosAdmin();
+      } catch (err) {
+        console.error(err);
+        alert('Error al solicitar la anulación.');
+      }
+    }
+
+    // ==========================================
+    // RENDERIZADO DE TABLAS
+    // ==========================================
+    function renderizarTabla(lista, contenedorId, esAdmin) {
+      const div = document.getElementById(contenedorId);
+
+      if (!lista || lista.length === 0) {
+        div.innerHTML = '<p style="color: #666; margin-top: 15px;">No se encontraron transferencias.</p>';
+        return;
+      }
+
+      let html = `<table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Origen</th>
+            <th>Destino</th>
+            <th>Monto</th>
+            <th>Estado</th>
+            <th>Fecha</th>
+            ${esAdmin ? '<th>Acción</th>' : ''}
+          </tr>
+        </thead>
+        <tbody>`;
+
+      lista.forEach(item => {
+        html += `<tr>
+          <td>${item.id}</td>
+          <td>${item.cuenta_origen}</td>
+          <td>${item.cuenta_destino}</td>
+          <td>$${parseFloat(item.monto).toLocaleString('es-CL')}</td>
+          <td><span class="badge ${item.estado}">${item.estado}</span></td>
+          <td>${new Date(item.fecha).toLocaleString()}</td>
+          ${esAdmin ? `<td>${item.estado === 'COMPLETADA' ? `<button class="btn-danger" onclick="anularTransferencia(${item.id})">Anular</button>` : '-'}</td>` : ''}
+        </tr>`;
+      });
+
+      html += '</tbody></table>';
+      div.innerHTML = html;
+    }
+  </script>
+</body>
+</html>

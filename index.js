@@ -3,6 +3,8 @@ const express = require('express');
 const cors = require('cors');
 
 const app = express();
+const path = require('path');
+app.use(express.static(path.join(__dirname, 'public')));
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
@@ -17,6 +19,7 @@ app.get('/api/status', (req, res) => {
 try {
   const transferenciasRoutes = require('./routes/transferencias');
   app.use('/api/transferencias', transferenciasRoutes);
+  app.use('/api/trasferencias', transferenciasRoutes);
 } catch (e) {
   console.log('Ruta de transferencias pendiente o no encontrada');
 }
