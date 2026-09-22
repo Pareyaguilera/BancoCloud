@@ -1,6 +1,19 @@
 const express = require('express');
 const router = express.Router();
-const db = require('../config/db');
+const db = require('../../config/db');
+
+// Listar transferencias general
+router.get('/', async (req, res) => {
+  try {
+    const [filas] = await db.query(
+      'SELECT * FROM transferencias ORDER BY id DESC'
+    );
+    res.json(filas);
+  } catch (error) {
+    console.error('Error al obtener transferencias:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // 1. Crear transferencia entre cuentas propias con transacción segura
 router.post('/', async (req, res) => {
@@ -128,7 +141,7 @@ router.get('/admin', async (req, res) => {
 });
 
 // 4. Anular transferencia (Admin) - revierte saldos
-router.put('/admin/anular/:id', async (req, res) => {
+router.put(['/anular/:id', '/admin/anular/:id'], async (req, res) => {
   const { id } = req.params;
   let connection;
 
