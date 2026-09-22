@@ -3,11 +3,28 @@ const express = require('express');
 const cors = require('cors');
 
 const app = express();
-const path = require('path');
-app.use(express.static(path.join(__dirname, '../frontend/public')));
 const PORT = process.env.PORT || 3000;
 
-app.use(cors());
+// Lista blanca de dominios autorizados
+const dominiosPermitidos = [
+  'http://localhost:5173',               // Entorno local de desarrollo
+  'https://main.xxxxxxx.amplifyapp.com'  // Reemplazar más adelante con la URL final de Amplify
+];
+
+const opcionesCors = {
+  origin: (origin, callback) => {
+    // Permite herramientas locales/CLI (sin origin) o dominios en lista blanca
+    if (!origin || dominiosPermitidos.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Petición bloqueada por política CORS de BancoCloud'));
+    }
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+};
+
+app.use(cors(opcionesCors));
 app.use(express.json());
 
 // Ruta de estado
@@ -24,6 +41,7 @@ try {
   console.log('Ruta de transferencias pendiente o no encontrada');
 }
 
+// Ruta para consulta de cuentas
 app.get('/api/cuentas', async (req, res) => {
   try {
     const db = require('./config/db');
