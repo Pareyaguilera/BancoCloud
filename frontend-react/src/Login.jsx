@@ -1,26 +1,61 @@
 import { useState } from 'react';
-import { signIn } from 'aws-amplify/auth';
+import { signIn, signUp } from 'aws-amplify/auth';
 
 export default function Login({ onLoginSuccess }) {
+  const [esRegistro, setEsRegistro] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [mensajeExito, setMensajeExito] = useState('');
   const [enviando, setEnviando] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setMensajeExito('');
     setEnviando(true);
 
     try {
-      const { isSignedIn } = await signIn({ username, password });
-      if (isSignedIn) onLoginSuccess();
+      if (esRegistro) {
+        // --- LÓGICA DE REGISTRO ---
+        // --- LÓGICA DE REGISTRO ---
+        await signUp({ 
+          username, 
+          password,
+          options: {
+            userAttributes: {
+              name: username, // Cumple con el requisito obligatorio de Cognito
+              email: username // Opcional, pero recomendado si usas correos
+            }
+          }
+        });
+        
+        
+        setMensajeExito('Registro exitoso. Espera a que el administrador autorice tu cuenta para poder ingresar.');
+        setEsRegistro(false); // Volver a la vista de login
+        setPassword(''); // Limpiar la contraseña por seguridad
+      } else {
+        // --- LÓGICA DE LOGIN ORIGINAL ---
+        const { isSignedIn } = await signIn({ username, password });
+        if (isSignedIn) onLoginSuccess();
+      }
     } catch (err) {
       console.error("Error:", err);
-      setError('Credenciales inválidas. Inténtalo de nuevo.');
+      if (esRegistro) {
+        setError(`Error al registrar: ${err.message || 'Verifica los datos solicitados.'}`);
+      } else {
+        setError('Credenciales inválidas. Inténtalo de nuevo o espera autorización.');
+      }
     } finally {
       setEnviando(false);
     }
+  };
+
+  const alternarModo = () => {
+    setEsRegistro(!esRegistro);
+    setError('');
+    setMensajeExito('');
+    setPassword('');
   };
 
   return (
@@ -29,10 +64,13 @@ export default function Login({ onLoginSuccess }) {
         <div style={styles.header}>
           <div style={styles.icon}>🏦</div>
           <h2 style={styles.title}>BancoCloud</h2>
-          <p style={styles.subtitle}>Tu portal financiero seguro</p>
+          <p style={styles.subtitle}>
+            {esRegistro ? 'Crea tu cuenta para operar' : 'Tu portal financiero seguro'}
+          </p>
         </div>
         
         {error && <div style={styles.errorAlert}>{error}</div>}
+        {mensajeExito && <div style={styles.successAlert}>{mensajeExito}</div>}
 
         <form onSubmit={handleSubmit} style={styles.form}>
           <div style={styles.inputGroup}>
@@ -64,9 +102,21 @@ export default function Login({ onLoginSuccess }) {
             disabled={enviando}
             style={enviando ? { ...styles.button, ...styles.buttonDisabled } : styles.button}
           >
-            {enviando ? 'Verificando...' : 'Iniciar Sesión'}
+            {enviando 
+              ? (esRegistro ? 'Registrando...' : 'Verificando...') 
+              : (esRegistro ? 'Registrarse' : 'Iniciar Sesión')}
           </button>
         </form>
+
+        <button 
+          type="button"
+          onClick={alternarModo} 
+          style={styles.btnLink}
+        >
+          {esRegistro 
+            ? '¿Ya tienes cuenta? Inicia sesión' 
+            : '¿No tienes cuenta? Regístrate aquí'}
+        </button>
       </div>
     </div>
   );
@@ -159,5 +209,26 @@ const styles = {
     marginBottom: '20px',
     border: '1px solid #f87171',
     textAlign: 'center',
+  },
+  successAlert: {
+    backgroundColor: '#ecfdf5',
+    color: '#065f46',
+    padding: '12px',
+    borderRadius: '8px',
+    fontSize: '14px',
+    marginBottom: '20px',
+    border: '1px solid #6ee7b7',
+    textAlign: 'center',
+  },
+  btnLink: {
+    marginTop: '20px',
+    background: 'none',
+    border: 'none',
+    color: '#002B5B',
+    cursor: 'pointer',
+    textDecoration: 'underline',
+    width: '100%',
+    fontSize: '14px',
+    textAlign: 'center'
   }
 };
